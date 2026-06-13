@@ -1,0 +1,12 @@
+# Core
+requests>=2.31
+numpy>=1.24
+python-dotenv>=1.0
+
+# LLM match explanations
+anthropic>=0.69
+
+# Embeddings (primary). If you can't install torch, the pipeline falls back
+# to a TF-IDF representation from scikit-learn automatically.
+sentence-transformers>=2.6
+scikit-learn>=1.3
