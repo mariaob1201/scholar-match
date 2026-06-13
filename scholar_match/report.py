@@ -80,7 +80,8 @@ _TEMPLATE = """<!doctype html>
   </div>
   <div id="graphwrap">
     <div class="ghint">Drag nodes to rearrange · node size = number of AI papers ·
-      edge = a top match (thicker = closer) · click a node to open OpenAlex.</div>
+      edge = a top match (thicker = closer) · click a node to open OpenAlex.
+      <span id="gcount" style="color:var(--bar)"></span></div>
     <svg id="graph" viewBox="0 0 960 620" preserveAspectRatio="xMidYMid meet"></svg>
   </div>
 </div>
@@ -138,6 +139,7 @@ renderList('');
 
 /* ---------- Graph view (vanilla force-directed SVG) ---------- */
 const W = 960, H = 620;
+const GRAPH_MAX_NODES = 90;  // a 500-node graph is an unreadable hairball
 const svg = document.getElementById('graph');
 const SVGNS = 'http://www.w3.org/2000/svg';
 let graphBuilt = false;
@@ -145,15 +147,23 @@ let graphBuilt = false;
 function hue(s) {{ let h = 0; for (const c of (s || '')) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }}
 
 function buildGraph() {{
-  const nodes = DATA.map(a => ({{
-    id: a.author_id, name: a.name, n: a.n_works || 1,
-    c: (a.top_concepts || [])[0] || '',
-    x: W / 2 + (Math.random() - 0.5) * 200,
-    y: H / 2 + (Math.random() - 0.5) * 200, vx: 0, vy: 0, fixed: false,
-  }}));
+  // Show the most-published scholars; everyone is still in the List tab.
+  const chosen = [...DATA].sort((a, b) => (b.n_works || 0) - (a.n_works || 0))
+                          .slice(0, GRAPH_MAX_NODES);
+  const gc = document.getElementById('gcount');
+  if (gc) gc.textContent = `· showing top ${{chosen.length}} of ${{DATA.length}} by paper count`;
+
+  const R0 = Math.min(W, H) / 2 - 50;
+  const nodes = chosen.map((a, i) => {{
+    const ang = (i / chosen.length) * 2 * Math.PI;  // spread on a circle to start
+    return {{ id: a.author_id, name: a.name, n: a.n_works || 1,
+             c: (a.top_concepts || [])[0] || '',
+             x: W / 2 + R0 * Math.cos(ang), y: H / 2 + R0 * Math.sin(ang),
+             vx: 0, vy: 0, fixed: false }};
+  }});
   const idx = new Map(nodes.map((n, i) => [n.id, i]));
   const seen = new Set(), edges = [];
-  for (const a of DATA) for (const m of (a.matches || [])) {{
+  for (const a of chosen) for (const m of (a.matches || [])) {{
     if (!idx.has(m.author_id) || !idx.has(a.author_id)) continue;
     const key = [a.author_id, m.author_id].sort().join('|');
     if (seen.has(key)) continue; seen.add(key);
@@ -163,9 +173,13 @@ function buildGraph() {{
   const lineEls = edges.map(e => {{
     const ln = document.createElementNS(SVGNS, 'line');
     ln.setAttribute('stroke-width', (0.5 + 3 * e.w).toFixed(2));
-    ln.setAttribute('stroke-opacity', (0.25 + 0.5 * e.w).toFixed(2));
+    ln.setAttribute('stroke-opacity', (0.2 + 0.5 * e.w).toFixed(2));
     svg.appendChild(ln); return ln;
   }});
+
+  let dragNode = null;
+  function startDrag(ev, nd) {{ ev.preventDefault(); dragNode = nd; nd.fixed = true; }}
+
   const groupEls = nodes.map(nd => {{
     const g = document.createElementNS(SVGNS, 'g');
     const r = 5 + Math.sqrt(nd.n) * 2;
@@ -173,11 +187,15 @@ function buildGraph() {{
     ci.setAttribute('r', r);
     ci.setAttribute('fill', `hsl(${{hue(nd.c)}},60%,55%)`);
     ci.setAttribute('stroke', '#0f1115'); ci.setAttribute('stroke-width', '1.5');
-    const tx = document.createElementNS(SVGNS, 'text');
-    tx.setAttribute('x', r + 3); tx.setAttribute('y', 4); tx.textContent = nd.name;
+    g.appendChild(ci);
+    if (r >= 9) {{  // label only the larger nodes; the rest show name on hover
+      const tx = document.createElementNS(SVGNS, 'text');
+      tx.setAttribute('x', r + 3); tx.setAttribute('y', 4); tx.textContent = nd.name;
+      g.appendChild(tx);
+    }}
     const title = document.createElementNS(SVGNS, 'title');
     title.textContent = `${{nd.name}} · ${{nd.n}} papers · ${{nd.c}}`;
-    g.appendChild(ci); g.appendChild(tx); g.appendChild(title);
+    g.appendChild(title);
     g.style.cursor = 'grab';
     svg.appendChild(g);
     g.addEventListener('mousedown', ev => startDrag(ev, nd));
@@ -185,14 +203,17 @@ function buildGraph() {{
     return g;
   }});
 
-  // Force simulation
-  let alpha = 1;
+  // Force simulation (clamped so overlapping nodes don't explode off-screen)
+  let alpha = 0.6;
+  const MAXV = 12;
   function tick() {{
     for (let i = 0; i < nodes.length; i++) {{
       for (let j = i + 1; j < nodes.length; j++) {{
         const a = nodes[i], b = nodes[j];
-        let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy || 0.01;
-        const rep = 2200 / d2, d = Math.sqrt(d2);
+        let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+        if (d2 < 1) {{ dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1; }}
+        const d = Math.sqrt(d2);
+        let rep = 1400 / d2; if (rep > 40) rep = 40;  // cap repulsion
         const fx = (dx / d) * rep, fy = (dy / d) * rep;
         a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
       }}
@@ -200,19 +221,21 @@ function buildGraph() {{
     for (const e of edges) {{
       const a = nodes[e.s], b = nodes[e.t];
       let dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 0.01;
-      const k = (d - 90) * 0.02 * (0.4 + e.w);
+      const k = (d - 80) * 0.015 * (0.4 + e.w);
       const fx = (dx / d) * k, fy = (dy / d) * k;
       a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
     }}
     for (const nd of nodes) {{
-      nd.vx += (W / 2 - nd.x) * 0.002;   // gravity to center
-      nd.vy += (H / 2 - nd.y) * 0.002;
+      nd.vx += (W / 2 - nd.x) * 0.008;   // gravity to center
+      nd.vy += (H / 2 - nd.y) * 0.008;
+      const sp = Math.hypot(nd.vx, nd.vy);
+      if (sp > MAXV) {{ nd.vx = nd.vx / sp * MAXV; nd.vy = nd.vy / sp * MAXV; }}
       if (!nd.fixed) {{
         nd.x += nd.vx * alpha; nd.y += nd.vy * alpha;
         nd.x = Math.max(20, Math.min(W - 20, nd.x));
         nd.y = Math.max(20, Math.min(H - 20, nd.y));
       }}
-      nd.vx *= 0.85; nd.vy *= 0.85;
+      nd.vx *= 0.82; nd.vy *= 0.82;
     }}
     edges.forEach((e, i) => {{
       const a = nodes[e.s], b = nodes[e.t];
@@ -221,23 +244,21 @@ function buildGraph() {{
     }});
     groupEls.forEach((g, i) =>
       g.setAttribute('transform', `translate(${{nodes[i].x}},${{nodes[i].y}})`));
-    alpha *= 0.985;
+    alpha *= 0.99;
     if (alpha > 0.02) requestAnimationFrame(tick);
   }}
-  tick();
 
-  // Drag
-  let dragNode = null;
   function pt(ev) {{
     const r = svg.getBoundingClientRect();
     return {{ x: (ev.clientX - r.left) / r.width * W, y: (ev.clientY - r.top) / r.height * H }};
   }}
-  function startDrag(ev, nd) {{ ev.preventDefault(); dragNode = nd; nd.fixed = true; alpha = Math.max(alpha, 0.3); tick(); }}
   window.addEventListener('mousemove', ev => {{
     if (!dragNode) return;
     const p = pt(ev); dragNode.x = p.x; dragNode.y = p.y; dragNode.vx = dragNode.vy = 0;
   }});
   window.addEventListener('mouseup', () => {{ if (dragNode) {{ dragNode.fixed = false; dragNode = null; }} }});
+
+  tick();
   graphBuilt = true;
 }}
 
