@@ -267,11 +267,13 @@ const tabList = document.getElementById('tab-list'), tabGraph = document.getElem
 const listWrap = document.getElementById('listwrap'), graphWrap = document.getElementById('graphwrap');
 tabList.onclick = () => {{
   tabList.classList.add('active'); tabGraph.classList.remove('active');
-  listWrap.style.display = ''; graphWrap.style.display = 'none';
+  listWrap.style.display = 'block'; graphWrap.style.display = 'none';
 }};
 tabGraph.onclick = () => {{
   tabGraph.classList.add('active'); tabList.classList.remove('active');
-  listWrap.style.display = 'none'; graphWrap.style.display = '';
+  // Must set an explicit value: clearing the inline style falls back to the
+  // stylesheet's `#graphwrap {{ display:none }}`, which would keep it hidden.
+  listWrap.style.display = 'none'; graphWrap.style.display = 'block';
   if (!graphBuilt) buildGraph();
 }};
 </script>

@@ -1,5 +1,7 @@
 # scholar-match
 
+**🔗 Live demo: https://mariaob1201.github.io/scholar-match/**
+
 Find UW-Madison scholars working on similar things in **AI / ML / statistics**,
 and match them by how close their published research is.
 
