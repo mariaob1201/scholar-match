@@ -67,6 +67,7 @@ def rank_matches(profiles: list[dict], top_k: int = 5) -> list[dict]:
             {
                 "author_id": p["author_id"],
                 "name": p["name"],
+                "n_works": p["n_works"],
                 "top_concepts": p["top_concepts"],
                 "matches": matches,
             }

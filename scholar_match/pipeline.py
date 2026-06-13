@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 
-from . import openalex, profiles, matching, explain
+from . import openalex, profiles, matching, explain, report
 
 
 def main() -> None:
@@ -32,6 +32,8 @@ def main() -> None:
     p_exp = sub.add_parser("explain", help="LLM explanations for top matches")
     p_exp.add_argument("--top-k", type=int, default=2)
     p_exp.add_argument("--max-authors", type=int, default=25)
+
+    sub.add_parser("report", help="Build a browsable report.html from results")
 
     p_all = sub.add_parser("all", help="Run every stage")
     p_all.add_argument("--from-year", type=int, default=2018)
@@ -55,6 +57,8 @@ def main() -> None:
         matching.rank_and_save(top_k=args.top_k)
     elif args.stage == "explain":
         explain.explain_and_save(top_k=args.top_k, max_authors=args.max_authors)
+    elif args.stage == "report":
+        report.build_report()
     elif args.stage == "all":
         works = openalex.fetch_and_save(
             from_year=args.from_year, max_works=args.max_works
@@ -65,6 +69,7 @@ def main() -> None:
             explain.explain_and_save(
                 top_k=args.explain_top_k, max_authors=args.max_authors
             )
+        report.build_report()
 
 
 if __name__ == "__main__":

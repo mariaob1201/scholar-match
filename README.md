@@ -26,6 +26,7 @@ OpenAlex  ──►  profiles  ──►  matching  ──►  explain
 | profiles | `scholar_match/profiles.py` | one embeddable text profile per author |
 | match | `scholar_match/matching.py` | embed profiles, rank each author's nearest peers |
 | explain | `scholar_match/explain.py` | Claude writes why each top pair matches |
+| report | `scholar_match/report.py` | render results into a browsable `report.html` |
 
 ## Setup
 
@@ -53,6 +54,7 @@ python -m scholar_match.pipeline fetch    --from-year 2020 --max-works 3000
 python -m scholar_match.pipeline profiles --min-works 3
 python -m scholar_match.pipeline match    --top-k 5
 python -m scholar_match.pipeline explain  --max-authors 25 --top-k 2
+python -m scholar_match.pipeline report
 ```
 
 Outputs land in `data/` as JSON:
@@ -61,6 +63,50 @@ Outputs land in `data/` as JSON:
 - `profiles.json` — per-author profiles
 - `matches.json` — ranked similar-author pairs + cosine scores
 - `matches_explained.json` — the above, plus Claude's match explanations
+- `report.html` — browsable report (see below)
+
+## See the results
+
+The `report` stage (run automatically by `all`) writes a single
+self-contained **`data/report.html`** — no server needed:
+
+```bash
+python -m scholar_match.pipeline report
+open data/report.html          # macOS  (xdg-open on Linux)
+```
+
+Two tabs at the top:
+
+- **List** — each scholar with research-area chips and their top matches: a
+  similarity bar + score per match, plus Claude's shared themes, summary, and
+  collaboration idea. Search box filters by name or area.
+- **Graph** — a force-directed network of who matches whom. Node size = number
+  of AI papers, edge thickness = match strength, node color groups by primary
+  area. Drag nodes to rearrange; click one to open its OpenAlex page.
+
+Names link to OpenAlex. The report reads `matches_explained.json` when present,
+otherwise falls back to `matches.json` (bars/scores only, no explanations).
+
+### Why am I only seeing a few people?
+
+The report header shows `… N scholars matched`. If `N` is small, you fetched or
+kept too few authors — the fix is upstream, not in the report:
+
+| Knob | Where | Effect |
+|------|-------|--------|
+| `--max-works` | `fetch` / `all` | Caps how many publications are pulled. **Omit it** to fetch everything (there are thousands). |
+| `--from-year` | `fetch` / `all` | Earlier year ⇒ more works and authors. |
+| `--min-works` | `profiles` / `all` | Authors with fewer AI papers than this are dropped. Lower to `1` to keep everyone. |
+
+The `profiles` stage prints how many distinct UW authors it saw and how many it
+dropped, so you can see exactly where people fall off. A full run keeps everyone:
+
+```bash
+python -m scholar_match.pipeline all --from-year 2020 --min-works 1
+```
+
+(`--max-authors`/`--top-k` on `explain` only limit how many get an LLM
+write-up — everyone still appears in the report with similarity scores.)
 
 ### Example output (`matches_explained.json`)
 
@@ -98,4 +144,3 @@ Outputs land in `data/` as JSON:
   the first `--max-authors` people. Raise those once you're happy with results.
 - **Tuning the field.** Edit `AI_CONCEPT_IDS` in `scholar_match/config.py` to
   narrow to pure stats, or widen to other areas.
-```

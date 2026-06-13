@@ -95,6 +95,18 @@ def build_and_save(
     profiles = build_profiles(
         works, min_works=min_works, max_works_per_author=max_works_per_author
     )
+    n_uw_authors = len(
+        {a["author_id"] for w in works for a in w["authorships"] if a["is_uw"]}
+    )
     path.write_text(json.dumps(profiles, indent=2))
-    print(f"Built {len(profiles)} author profiles -> {path}")
+    print(
+        f"Built {len(profiles)} author profiles -> {path}\n"
+        f"  ({n_uw_authors} distinct UW authors seen; "
+        f"{n_uw_authors - len(profiles)} dropped by min_works={min_works})"
+    )
+    if len(profiles) < 10:
+        print(
+            "  Few profiles. To include more people: fetch more works "
+            "(raise/remove --max-works, lower --from-year) or lower --min-works."
+        )
     return profiles
