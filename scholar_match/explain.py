@@ -3,28 +3,34 @@
 Cosine similarity tells you a pair is close; it doesn't say what they share.
 This step asks Claude for a short, human-readable read on each top match:
 shared themes, a one-line summary, and a concrete collaboration idea.
+
+`anthropic` and `pydantic` are imported lazily inside the functions so the rest
+of the pipeline (fetch / profiles / match / report) runs without them installed.
 """
 
 from __future__ import annotations
 
 import json
 
-import anthropic
-from pydantic import BaseModel, Field
-
 from . import config
 
 
-class MatchExplanation(BaseModel):
-    shared_themes: list[str] = Field(
-        description="Specific research topics/methods the two scholars share."
-    )
-    summary: str = Field(
-        description="One or two sentences on why they'd connect well."
-    )
-    collaboration_idea: str = Field(
-        description="A concrete project or paper they could pursue together."
-    )
+def _match_schema():
+    """Build the structured-output model. Imported lazily (needs pydantic)."""
+    from pydantic import BaseModel, Field
+
+    class MatchExplanation(BaseModel):
+        shared_themes: list[str] = Field(
+            description="Specific research topics/methods the two scholars share."
+        )
+        summary: str = Field(
+            description="One or two sentences on why they'd connect well."
+        )
+        collaboration_idea: str = Field(
+            description="A concrete project or paper they could pursue together."
+        )
+
+    return MatchExplanation
 
 
 def _profile_blurb(profile: dict) -> str:
@@ -33,9 +39,7 @@ def _profile_blurb(profile: dict) -> str:
     return f"Name: {profile['name']}\nAreas: {concepts}\nSelected work: {titles}"
 
 
-def explain_pair(
-    client: anthropic.Anthropic, a: dict, b: dict, similarity: float
-) -> MatchExplanation:
+def explain_pair(client, schema, a: dict, b: dict, similarity: float) -> dict:
     prompt = (
         "Two University of Wisconsin-Madison scholars work in AI/ML/statistics. "
         "A similarity model scored their research overlap at "
@@ -49,9 +53,9 @@ def explain_pair(
         model=config.CLAUDE_MODEL,
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
-        output_format=MatchExplanation,
+        output_format=schema,
     )
-    return response.parsed_output
+    return response.parsed_output.model_dump()
 
 
 def explain_matches(
@@ -66,7 +70,10 @@ def explain_matches(
         top_k: how many of each author's matches to explain (cost control).
         max_authors: only explain matches for the first N authors (cost control).
     """
+    import anthropic
+
     client = anthropic.Anthropic()
+    schema = _match_schema()
     by_id = {p["author_id"]: p for p in profiles}
 
     authors = matches[:max_authors] if max_authors else matches
@@ -78,8 +85,7 @@ def explain_matches(
             b = by_id.get(m["author_id"])
             if b is None:
                 continue
-            explanation = explain_pair(client, a, b, m["similarity"])
-            m["explanation"] = explanation.model_dump()
+            m["explanation"] = explain_pair(client, schema, a, b, m["similarity"])
             print(f"  {rec['name']}  <->  {m['name']}  ({m['similarity']})")
     return matches
 
